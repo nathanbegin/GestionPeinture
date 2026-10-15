@@ -12,7 +12,7 @@ export const SURFACES = [
   { value: 'portes', label: 'Portes' },
   { value: 'autre', label: 'Autre' },
 ];
-export const FINISHES = ['Mat', 'Coquille d’œuf', 'Satiné', 'Semi-lustré', 'Lustré', 'Autre'];
+export const FINISHES = ['Extra mat', 'Mat', 'Velouté', 'Coquille d’œuf', 'Satiné', 'Satin/Perle', 'Semi-lustré', 'Lustré', 'Autre'];
 export const FLOOR_TYPES = ['Plancher', 'Céramique', 'Vinyle', 'Tapis', 'Autre'];
 
 // Dates au mois près : stockées « AAAA-MM » (les anciennes « AAAA-MM-JJ » restent lisibles).
