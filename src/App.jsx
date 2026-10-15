@@ -138,6 +138,26 @@ function SaveStatus({ saveState, reload, retrySave }) {
   return <span className="tag meta">{saveState === 'saving' ? 'Enregistrement…' : 'Enregistré'}</span>;
 }
 
+/** Pour un champ sans couleur (murs, plafond ou moulures) : reprendre une couleur déjà choisie dans la même pièce. */
+function SameColorButtons({ room, kind, update }) {
+  const sources = colorSources(room);
+  if (!sources.length) return null;
+  const apply = (src) => {
+    const blank = room.surfaces.find((x) => x.kind === kind && !isChosen(x));
+    update(blank
+      ? { ...room, surfaces: room.surfaces.map((x) => (x === blank ? { ...x, ...src.fields, notes: x.notes || sameColorNote(src) } : x)) }
+      : { ...room, surfaces: [...room.surfaces, { ...newSurface(kind), ...src.fields, notes: sameColorNote(src) }] });
+  };
+  return (
+    <div className="row" style={{ marginTop: 4 }}>
+      <span className="meta">Même couleur que :</span>
+      {sources.map((src) => (
+        <button key={src.key} className="small" onClick={() => apply(src)}>{sourceLabel(src)}</button>
+      ))}
+    </div>
+  );
+}
+
 function Room({ room, otherRooms, update, remove }) {
   // editing: { type: 'surface' | 'floor', item } ou null
   const [editing, setEditing] = useState(null);
@@ -177,7 +197,6 @@ function Room({ room, otherRooms, update, remove }) {
       {room.notes && <p className="meta">{room.notes}</p>}
 
       <h3>Peinture et couleurs</h3>
-      {room.surfaces.length === 0 && <p className="meta">Aucune surface enregistrée.</p>}
       {room.surfaces.map((s) => (
         <div className="surface" key={s.id}>
           <div className="swatch" style={{ background: s.hex }} title={s.hex} />
@@ -192,9 +211,21 @@ function Room({ room, otherRooms, update, remove }) {
               {s.inStock ? `En stock${s.stockNote ? ` : ${s.stockNote}` : ''}` : 'Plus de stock'}
             </span>
             {s.notes && <div className="meta">{s.notes}</div>}
+            {!isChosen(s) && missingKinds(room).includes(s.kind) && <SameColorButtons room={room} kind={s.kind} update={update} />}
           </div>
           <button className="link" onClick={() => setEditing({ type: 'surface', item: s })}>Modifier</button>
           <button className="link danger" onClick={() => update({ ...room, surfaces: room.surfaces.filter((x) => x.id !== s.id) })}>✕</button>
+        </div>
+      ))}
+
+      {missingKinds(room).filter((k) => !room.surfaces.some((s) => s.kind === k)).map((kind) => (
+        <div className="surface" key={`manque-${kind}`}>
+          <div className="swatch empty" />
+          <div className="grow">
+            <strong>{surfaceLabel(kind)}</strong> <span className="tag warn">couleur non choisie</span>
+            <SameColorButtons room={room} kind={kind} update={update} />
+          </div>
+          <button className="link" onClick={() => setEditing({ type: 'surface', item: newSurface(kind) })}>Choisir…</button>
         </div>
       ))}
 
@@ -229,43 +260,12 @@ function Room({ room, otherRooms, update, remove }) {
 /** Parcourt les pièces incomplètes et propose de combler chaque vide (nouvelle couleur ou copie d'une autre pièce). */
 function FillGaps({ house, updateHouse, onClose }) {
   const [skipped, setSkipped] = useState([]);
-  const [applyAll, setApplyAll] = useState(false);
   const tasks = house.rooms.flatMap((room) => missingKinds(room).map((kind) => ({ room, kind, key: `${room.id}:${kind}` })));
   const pending = tasks.filter((t) => !skipped.includes(t.key));
   const task = pending[0];
-  const sameKind = task ? pending.filter((t) => t.kind === task.kind) : [];
 
-  const save = (surf) => {
-    // « Même couleur partout » : copie couleur et produit dans les autres pièces où ce type manque aussi.
-    const targets = applyAll && surf.kind === task.kind ? sameKind : [task];
-    updateHouse({
-      rooms: house.rooms.map((r) => {
-        if (!targets.some((t) => t.room.id === r.id)) return r;
-        const item = r.id === task.room.id
-          ? surf
-          : { ...newSurface(surf.kind), label: surf.label, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, surf[f]])) };
-        return withSurface(r, item);
-      }),
-    });
-    setApplyAll(false);
-  };
-
-  // « Même couleur » automatique : seulement dans les pièces où une seule couleur est déjà choisie
-  // (sinon on ne sait pas laquelle reprendre : le choix se fait à l'étape de la pièce).
-  const auto = house.rooms.filter((r) => missingKinds(r).length && colorSources(r).length === 1);
-  const autoCount = auto.reduce((n, r) => n + missingKinds(r).length, 0);
-  const fillSameColor = () => {
-    updateHouse({
-      rooms: house.rooms.map((r) => {
-        if (!auto.includes(r)) return r;
-        const [src] = colorSources(r);
-        return missingKinds(r).reduce(
-          (room, kind) => withSurface(room, { ...newSurface(kind), ...src.fields, notes: sameColorNote(src) }),
-          r,
-        );
-      }),
-    });
-  };
+  // La couleur ne s'ajoute qu'à la pièce de l'étape en cours.
+  const save = (surf) => updateHouse({ rooms: house.rooms.map((r) => (r.id === task.room.id ? withSurface(r, surf) : r)) });
 
   return (
     <div className="overlay">
@@ -284,14 +284,6 @@ function FillGaps({ house, updateHouse, onClose }) {
             <p className="meta">
               Reste {pending.length} élément(s) dans {new Set(pending.map((t) => t.room.id)).size} pièce(s).
             </p>
-            {autoCount > 0 && (
-              <div className="card row" style={{ marginBottom: 10 }}>
-                <span className="grow meta">
-                  {auto.length} pièce(s) n’ont qu’une seule couleur : les {autoCount} vide(s) peuvent reprendre cette couleur (produit et fini à préciser ensuite).
-                </span>
-                <button className="primary" onClick={fillSameColor}>Même couleur partout ({autoCount})</button>
-              </div>
-            )}
             <h3>{task.room.name} — manque : {surfaceLabel(task.kind).toLowerCase()}</h3>
             <SurfaceForm
               key={task.key}
@@ -304,12 +296,6 @@ function FillGaps({ house, updateHouse, onClose }) {
               saveLabel="Enregistrer et suivant"
               cancelLabel="Passer"
             />
-            {sameKind.length > 1 && (
-              <label className="row" style={{ marginTop: 10 }}>
-                <input type="checkbox" checked={applyAll} onChange={(e) => setApplyAll(e.target.checked)} />
-                Appliquer la même couleur aux {sameKind.length - 1} autre(s) pièce(s) où manque : {surfaceLabel(task.kind).toLowerCase()}
-              </label>
-            )}
             <div className="row" style={{ marginTop: 14 }}><button onClick={onClose}>Fermer</button></div>
           </>
         )}

@@ -31,3 +31,5 @@ input[type=checkbox] { width:auto; }
 .copy-picker select { width:100%; }
 .tag.warn { color:var(--warn); border-color:var(--warn); }
 .warn-text { color:var(--warn); font-size:13px; margin-top:2px; }
+button.small { padding:2px 8px; font-size:13px; }
+.swatch.empty { background:transparent; border-style:dashed; }
