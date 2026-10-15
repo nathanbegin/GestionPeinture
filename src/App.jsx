@@ -10,11 +10,51 @@ function Field({ label, children, className }) {
   return <label className={className}>{label}{children}</label>;
 }
 
-function SurfaceForm({ value, onSave, onCancel }) {
+// Champs repris d'une autre pièce : couleur et produit (pas la date, le stock ni les notes du pot).
+const COPY_FIELDS = ['colorName', 'colorCode', 'hex', 'brand', 'model', 'finish'];
+
+/** Couleurs déjà utilisées dans les autres pièces, regroupées quand elles sont identiques. */
+function copySources(otherRooms) {
+  const map = new Map();
+  for (const room of otherRooms) {
+    for (const surf of room.surfaces) {
+      const key = [surf.kind, ...COPY_FIELDS.map((f) => surf[f])].join('|');
+      if (!map.has(key)) map.set(key, { key, kind: surf.kind, surf, rooms: [] });
+      map.get(key).rooms.push(room.name);
+    }
+  }
+  return [...map.values()];
+}
+
+function CopyPicker({ kind, otherRooms, onPick }) {
+  const [all, setAll] = useState(false);
+  const sources = copySources(otherRooms).filter((o) => all || o.kind === kind);
+  if (!copySources(otherRooms).length) return null;
+  return (
+    <div className="full copy-picker">
+      <Field label={`Copier la couleur d’une autre pièce (${all ? 'toutes les surfaces' : surfaceLabel(kind).toLowerCase()})`}>
+        <select value="" onChange={(e) => { const o = sources.find((x) => x.key === e.target.value); if (o) onPick(o.surf); }}>
+          <option value="">{sources.length ? '— Choisir une couleur existante —' : 'Aucune couleur de ce type ailleurs'}</option>
+          {sources.map((o) => (
+            <option key={o.key} value={o.key}>
+              {[o.surf.colorCode, o.surf.colorName].filter(Boolean).join(' ') || 'Sans code'} — {[o.surf.brand, o.surf.model, o.surf.finish].filter(Boolean).join(' · ') || 'produit non précisé'}
+              {' '}({o.rooms.join(', ')})
+            </option>
+          ))}
+        </select>
+      </Field>
+      <label className="chk meta"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> Montrer toutes les surfaces</label>
+    </div>
+  );
+}
+
+function SurfaceForm({ value, onSave, onCancel, otherRooms = [], isNew = false }) {
   const [s, setS] = useState(value);
   const set = (k) => (e) => setS({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
+  const copyFrom = (src) => setS({ ...s, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, src[f]])) });
   return (
     <div className="form">
+      {isNew && <CopyPicker kind={s.kind} otherRooms={otherRooms} onPick={copyFrom} />}
       <Field label="Surface">
         <select value={s.kind} onChange={set('kind')}>
           {SURFACES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -77,7 +117,7 @@ function SaveStatus({ saveState, reload, retrySave }) {
   return <span className="tag meta">{saveState === 'saving' ? 'Enregistrement…' : 'Enregistré'}</span>;
 }
 
-function Room({ room, update, remove }) {
+function Room({ room, otherRooms, update, remove }) {
   // editing: { type: 'surface' | 'floor', item } ou null
   const [editing, setEditing] = useState(null);
 
@@ -147,7 +187,7 @@ function Room({ room, update, remove }) {
       {editing ? (
         <div className="surface" style={{ display: 'block' }}>
           {editing.type === 'surface'
-            ? <SurfaceForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} />
+            ? <SurfaceForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} otherRooms={otherRooms} isNew={!room.surfaces.some((x) => x.id === editing.item.id)} />
             : <FloorForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} />}
         </div>
       ) : (
@@ -288,7 +328,7 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
         <div key={g.floor}>
           <h3>{g.floor || 'Sans étage'}</h3>
           {g.rooms.map((r) => (
-            <Room key={r.id} room={r} update={updateRoom} remove={() => updateHouse({ rooms: house.rooms.filter((x) => x.id !== r.id) })} />
+            <Room key={r.id} room={r} otherRooms={house.rooms.filter((x) => x.id !== r.id)} update={updateRoom} remove={() => updateHouse({ rooms: house.rooms.filter((x) => x.id !== r.id) })} />
           ))}
         </div>
       ))}

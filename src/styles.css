@@ -26,3 +26,6 @@ input[type=checkbox] { width:auto; }
 .form .full { grid-column:1/-1; }
 .overlay { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:20px; }
 .modal { background:var(--bg); border-radius:12px; padding:16px; width:min(720px,100%); }
+.copy-picker { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:flex-end; padding:10px; border:1px dashed var(--line); border-radius:8px; }
+.copy-picker > label:first-child { flex:1 1 280px; }
+.copy-picker select { width:100%; }
