@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { surfaceLabel } from './store.js';
+import { surfaceLabel, groupByFloor } from './store.js';
 
 const hexToRgb = (hex) => {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
@@ -28,7 +28,19 @@ export function buildReport(house, { roomIds = null, includeFloors = true, onlyI
   let y = house.address ? 105 : 90;
   if (!rooms.length) doc.text('Aucune pièce à afficher.', margin, y);
 
-  for (const room of rooms) {
+  const ordered = groupByFloor(rooms).flatMap((g) => g.rooms.map((room, i) => ({ room, heading: i === 0 ? g.floor || 'Sans étage' : null })));
+
+  for (const { room, heading } of ordered) {
+    if (heading) {
+      if (y > 640) { doc.addPage(); y = 50; }
+      doc.setFontSize(16);
+      doc.setTextColor(55, 65, 81);
+      doc.text(heading, margin, y);
+      doc.setDrawColor(55, 65, 81);
+      doc.line(margin, y + 4, 572, y + 4);
+      doc.setTextColor(0);
+      y += 24;
+    }
     const surfaces = room.surfaces.filter((s) => !onlyInStock || s.inStock);
     if (y > 680) { doc.addPage(); y = 50; }
     doc.setFontSize(14);

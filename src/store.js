@@ -18,7 +18,7 @@ export const FLOOR_TYPES = ['Plancher', 'Céramique', 'Vinyle', 'Tapis', 'Autre'
 export const surfaceLabel = (v) => SURFACES.find((s) => s.value === v)?.label ?? v;
 
 export const newHouse = (name = 'Ma maison', address = '') => ({ id: uid(), name, address, rooms: [] });
-export const newRoom = (name) => ({ id: uid(), name, notes: '', surfaces: [], floors: [] });
+export const newRoom = (name, floor = '') => ({ id: uid(), name, floor, notes: '', surfaces: [], floors: [] });
 export const newSurface = (kind = 'murs') => ({
   id: uid(), kind, label: '', colorName: '', colorCode: '', hex: '#cccccc',
   brand: '', model: '', finish: '', lastApplied: '', inStock: false, stockNote: '', notes: '',
@@ -27,17 +27,46 @@ export const newFloor = () => ({
   id: uid(), type: 'Plancher', brand: '', model: '', color: '', installedOn: '', notes: '',
 });
 
+export const FLOORS = ['Rez-de-chaussée', 'Étage', 'Sous-sol', 'Autre'];
+
+// [nom, étage]
 export const DEFAULT_ROOMS = [
-  'Entrée avant', 'Salle à manger', 'Cuisine', 'Boudoir', 'Salon',
-  'Cage d’escalier (rez-de-chaussée)', 'Cage d’escalier (étage)', 'Cage d’escalier (sous-sol)',
-  'Salle d’eau', 'Salle de lavage', 'Salle de bain (sous-sol)', 'Salle de bain (étage)',
-  'Chambre des maîtres', 'Chambre Nathan', 'Chambre Léa', 'Chambre invitée',
-  'Chambre de musique', 'Cinéma maison', 'Garage',
+  ['Entrée avant', 'Rez-de-chaussée'], ['Salle à manger', 'Rez-de-chaussée'], ['Cuisine', 'Rez-de-chaussée'],
+  ['Boudoir', 'Rez-de-chaussée'], ['Salon', 'Rez-de-chaussée'], ['Cage d’escalier (rez-de-chaussée)', 'Rez-de-chaussée'],
+  ['Cage d’escalier (étage)', 'Étage'], ['Salle de bain (étage)', 'Étage'], ['Chambre des maîtres', 'Étage'],
+  ['Chambre Léa', 'Étage'], ['Chambre de musique', 'Étage'],
+  ['Cage d’escalier (sous-sol)', 'Sous-sol'], ['Salle de bain (sous-sol)', 'Sous-sol'], ['Salle d’eau', 'Sous-sol'],
+  ['Salle de lavage', 'Sous-sol'], ['Cinéma maison', 'Sous-sol'], ['Chambre Nathan', 'Sous-sol'], ['Chambre invitée', 'Sous-sol'],
+  ['Garage', 'Autre'],
 ];
+const DEFAULT_FLOOR_BY_NAME = Object.fromEntries(DEFAULT_ROOMS);
+
+/** Pièces regroupées par étage, dans l'ordre de FLOORS (sans étage à la fin). Groupes vides omis. */
+export function groupByFloor(rooms) {
+  const groups = [...FLOORS, ''].map((f) => ({ floor: f, rooms: rooms.filter((r) => (r.floor || '') === f) }));
+  const known = new Set(FLOORS);
+  const stray = rooms.filter((r) => r.floor && !known.has(r.floor));
+  groups[groups.length - 1].rooms.push(...stray);
+  return groups.filter((g) => g.rooms.length);
+}
+
+// Ajoute l'étage aux pièces créées avant l'existence de ce champ. Retourne [données, modifié?].
+function addMissingFloors(data) {
+  let changed = false;
+  const houses = data.houses.map((h) => ({
+    ...h,
+    rooms: h.rooms.map((r) => {
+      if (r.floor !== undefined) return r;
+      changed = true;
+      return { ...r, floor: DEFAULT_FLOOR_BY_NAME[r.name] ?? '' };
+    }),
+  }));
+  return [{ ...data, houses }, changed];
+}
 
 const defaultState = () => {
   const house = newHouse();
-  house.rooms = DEFAULT_ROOMS.map(newRoom);
+  house.rooms = DEFAULT_ROOMS.map(([name, floor]) => newRoom(name, floor));
   return { houses: [house], currentId: house.id };
 };
 
@@ -114,8 +143,11 @@ export function useStore() {
       const { data, version: v } = await r.json();
       version.current = v;
       let initial = data ?? legacyState() ?? defaultState();
-      const seed = !!data && isPristine(data);
+      let seed = !!data && isPristine(data);
       if (seed) initial = defaultState();
+      const [withFloors, migrated] = addMissingFloors(initial);
+      initial = withFloors;
+      seed = seed || migrated;
       latest.current = initial;
       setStateRaw(initial);
       setSaveState('saved');

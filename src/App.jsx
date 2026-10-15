@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   useStore, newHouse, newRoom, newSurface, newFloor, uid,
-  SURFACES, FINISHES, FLOOR_TYPES, surfaceLabel,
+  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, groupByFloor, surfaceLabel,
 } from './store.js';
 import { downloadReport } from './pdf.js';
 
@@ -101,6 +101,10 @@ function Room({ room, update, remove }) {
     <section className="card">
       <div className="row">
         <h2 className="grow">{room.name}</h2>
+        <select value={room.floor || ''} onChange={(e) => update({ ...room, floor: e.target.value })} aria-label="Étage">
+          <option value="">Sans étage</option>
+          {FLOORS.map((f) => <option key={f}>{f}</option>)}
+        </select>
         <button className="link" onClick={rename}>Renommer</button>
         <button className="link" onClick={editNotes}>Notes</button>
         <button className="link danger" onClick={() => confirm(`Supprimer « ${room.name} » ?`) && remove()}>Supprimer</button>
@@ -167,8 +171,8 @@ function ReportModal({ house, onClose }) {
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Rapport PDF — {house.name}</h2>
         <h3>Pièces à inclure</h3>
-        {house.rooms.map((r) => (
-          <div key={r.id}><label><input type="checkbox" checked={ids.includes(r.id)} onChange={() => toggle(r.id)} /> {r.name}</label></div>
+        {groupByFloor(house.rooms).flatMap((g) => g.rooms).map((r) => (
+          <div key={r.id}><label><input type="checkbox" checked={ids.includes(r.id)} onChange={() => toggle(r.id)} /> {r.name}{r.floor ? ` — ${r.floor}` : ''}</label></div>
         ))}
         <h3>Options</h3>
         <div><label><input type="checkbox" checked={includeFloors} onChange={(e) => setFloors(e.target.checked)} /> Inclure planchers et céramique</label></div>
@@ -208,9 +212,11 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
       return { houses, currentId: houses[0].id };
     });
   };
+  const [adding, setAdding] = useState(null); // { name, floor } ou null
   const addRoom = () => {
-    const name = prompt('Nom de la pièce (ex. Salon, Chambre des maîtres)');
-    if (name?.trim()) updateHouse({ rooms: [...house.rooms, newRoom(name.trim())] });
+    if (!adding.name.trim()) return;
+    updateHouse({ rooms: [...house.rooms, newRoom(adding.name.trim(), adding.floor)] });
+    setAdding(null);
   };
 
   const exportJson = () => {
@@ -252,7 +258,7 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
           <h2>{house.name}</h2>
           <div className="meta">{house.address || 'Aucune adresse'} · {house.rooms.length} pièce(s)</div>
         </div>
-        <button className="primary" onClick={addRoom}>+ Pièce</button>
+        <button className="primary" onClick={() => setAdding({ name: '', floor: FLOORS[0] })}>+ Pièce</button>
         <button onClick={() => setReport(true)} disabled={!house.rooms.length}>Rapport PDF</button>
         <button onClick={exportJson}>Exporter (JSON)</button>
         <label className="row" style={{ cursor: 'pointer' }}>
@@ -261,9 +267,25 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
         </label>
       </div>
 
+      {adding && (
+        <form className="card row" onSubmit={(e) => { e.preventDefault(); addRoom(); }}>
+          <input className="grow" autoFocus placeholder="Nom de la pièce" value={adding.name} onChange={(e) => setAdding({ ...adding, name: e.target.value })} />
+          <select value={adding.floor} onChange={(e) => setAdding({ ...adding, floor: e.target.value })}>
+            {FLOORS.map((f) => <option key={f}>{f}</option>)}
+          </select>
+          <button className="primary" disabled={!adding.name.trim()}>Ajouter</button>
+          <button type="button" onClick={() => setAdding(null)}>Annuler</button>
+        </form>
+      )}
+
       {house.rooms.length === 0 && <p className="meta">Aucune pièce. Commencez par en ajouter une.</p>}
-      {house.rooms.map((r) => (
-        <Room key={r.id} room={r} update={updateRoom} remove={() => updateHouse({ rooms: house.rooms.filter((x) => x.id !== r.id) })} />
+      {groupByFloor(house.rooms).map((g) => (
+        <div key={g.floor}>
+          <h3>{g.floor || 'Sans étage'}</h3>
+          {g.rooms.map((r) => (
+            <Room key={r.id} room={r} update={updateRoom} remove={() => updateHouse({ rooms: house.rooms.filter((x) => x.id !== r.id) })} />
+          ))}
+        </div>
       ))}
 
       {report && <ReportModal house={house} onClose={() => setReport(false)} />}
