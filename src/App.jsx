@@ -177,6 +177,10 @@ function Room({ room, otherRooms, update, remove }) {
     if (notes !== null) update({ ...room, notes });
   };
 
+  const editForm = editing && (editing.type === 'surface'
+    ? <SurfaceForm key={editing.item.id} value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} otherRooms={otherRooms} sameColor={colorSources(room)} isNew={!room.surfaces.some((x) => x.id === editing.item.id)} />
+    : <FloorForm key={editing.item.id} value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} />);
+
   return (
     <section className="card">
       <div className="row">
@@ -225,7 +229,7 @@ function Room({ room, otherRooms, update, remove }) {
             <strong>{surfaceLabel(kind)}</strong> <span className="tag warn">couleur non choisie</span>
             <SameColorButtons room={room} kind={kind} update={update} />
           </div>
-          <button className="link" onClick={() => setEditing({ type: 'surface', item: newSurface(kind) })}>Choisir…</button>
+          <button className="link" onClick={() => setEditing({ type: 'surface', item: newSurface(kind), popup: true })}>Choisir…</button>
         </div>
       ))}
 
@@ -241,13 +245,16 @@ function Room({ room, otherRooms, update, remove }) {
         </div>
       ))}
 
-      {editing ? (
-        <div className="surface" style={{ display: 'block' }}>
-          {editing.type === 'surface'
-            ? <SurfaceForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} otherRooms={otherRooms} sameColor={colorSources(room)} isNew={!room.surfaces.some((x) => x.id === editing.item.id)} />
-            : <FloorForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} />}
+      {editing && !editing.popup && <div className="surface" style={{ display: 'block' }}>{editForm}</div>}
+      {editing?.popup && (
+        <div className="overlay">
+          <div className="modal">
+            <h2>{room.name} — {surfaceLabel(editing.item.kind).toLowerCase()}</h2>
+            {editForm}
+          </div>
         </div>
-      ) : (
+      )}
+      {(!editing || editing.popup) && (
         <div className="row" style={{ marginTop: 10 }}>
           <button onClick={() => setEditing({ type: 'surface', item: newSurface() })}>+ Ajouter une couleur</button>
           <button onClick={() => setEditing({ type: 'floor', item: newFloor() })}>+ Plancher / céramique</button>
