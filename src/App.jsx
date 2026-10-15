@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   useStore, newHouse, newRoom, newSurface, newFloor, uid,
-  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, groupByFloor, surfaceLabel,
+  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel,
 } from './store.js';
 import { downloadReport } from './pdf.js';
 
@@ -212,6 +212,9 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
       return { houses, currentId: houses[0].id };
     });
   };
+  // Pièces de base pas encore présentes dans cette maison (comparaison par nom)
+  const missingRooms = DEFAULT_ROOMS.filter(([name]) => !house.rooms.some((r) => r.name === name));
+  const addDefaultRooms = () => updateHouse({ rooms: [...house.rooms, ...missingRooms.map(([n, f]) => newRoom(n, f))] });
   const [adding, setAdding] = useState(null); // { name, floor } ou null
   const addRoom = () => {
     if (!adding.name.trim()) return;
@@ -259,6 +262,9 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
           <div className="meta">{house.address || 'Aucune adresse'} · {house.rooms.length} pièce(s)</div>
         </div>
         <button className="primary" onClick={() => setAdding({ name: '', floor: FLOORS[0] })}>+ Pièce</button>
+        {missingRooms.length > 0 && (
+          <button onClick={addDefaultRooms} title="Ajoute les pièces de base absentes de cette maison">+ Pièces de base ({missingRooms.length})</button>
+        )}
         <button onClick={() => setReport(true)} disabled={!house.rooms.length}>Rapport PDF</button>
         <button onClick={exportJson}>Exporter (JSON)</button>
         <label className="row" style={{ cursor: 'pointer' }}>
