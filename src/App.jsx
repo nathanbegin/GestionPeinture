@@ -1,13 +1,24 @@
 import { useState } from 'react';
 import {
   useStore, newHouse, newRoom, newSurface, newFloor, uid,
-  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel, fmtMonth, toMonthValue, missingKinds, isChosen,
+  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel, fmtMonth, toMonthValue, missingKinds, isChosen, colorSources,
 } from './store.js';
 import { downloadReport } from './pdf.js';
 
 
 function Field({ label, children, className }) {
   return <label className={className}>{label}{children}</label>;
+}
+
+const THE = { murs: 'les murs', plafond: 'le plafond', moulures: 'les moulures' };
+const sourceLabel = (src) =>
+  `${src.kinds.map((k) => THE[k]).join(' et ')} (${[src.fields.colorCode, src.fields.colorName].filter(Boolean).join(' ')})`;
+const sameColorNote = (src) => `Même couleur que ${src.kinds.map((k) => THE[k]).join(' et ')} : produit et fini à préciser`;
+
+// Ajoute une surface à la pièce; une entrée vide du même type (sans couleur choisie) est remplacée plutôt que doublée.
+function withSurface(room, item) {
+  const blank = room.surfaces.findIndex((x) => x.kind === item.kind && !isChosen(x));
+  return { ...room, surfaces: blank < 0 ? [...room.surfaces, item] : room.surfaces.map((x, i) => (i === blank ? { ...item, id: x.id } : x)) };
 }
 
 // Champs repris d'une autre pièce : couleur et produit (pas la date, le stock ni les notes du pot).
@@ -48,12 +59,22 @@ function CopyPicker({ kind, otherRooms, onPick }) {
   );
 }
 
-function SurfaceForm({ value, onSave, onCancel, otherRooms = [], isNew = false, saveLabel = 'Enregistrer', cancelLabel = 'Annuler' }) {
+function SurfaceForm({ value, onSave, onCancel, otherRooms = [], sameColor = [], isNew = false, saveLabel = 'Enregistrer', cancelLabel = 'Annuler' }) {
   const [s, setS] = useState(value);
   const set = (k) => (e) => setS({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const copyFrom = (src) => setS({ ...s, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, src[f]])) });
   return (
     <div className="form">
+      {isNew && sameColor.filter((src) => !src.kinds.every((k) => k === s.kind)).length > 0 && (
+        <div className="full copy-picker">
+          <span className="meta">Même couleur que :</span>
+          {sameColor.filter((src) => !src.kinds.every((k) => k === s.kind)).map((src) => (
+            <button key={src.key} type="button" onClick={() => setS({ ...s, ...src.fields, notes: s.notes || sameColorNote(src) })}>
+              {sourceLabel(src)}
+            </button>
+          ))}
+        </div>
+      )}
       {isNew && <CopyPicker kind={s.kind} otherRooms={otherRooms} onPick={copyFrom} />}
       <Field label="Surface">
         <select value={s.kind} onChange={set('kind')}>
@@ -192,7 +213,7 @@ function Room({ room, otherRooms, update, remove }) {
       {editing ? (
         <div className="surface" style={{ display: 'block' }}>
           {editing.type === 'surface'
-            ? <SurfaceForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} otherRooms={otherRooms} isNew={!room.surfaces.some((x) => x.id === editing.item.id)} />
+            ? <SurfaceForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} otherRooms={otherRooms} sameColor={colorSources(room)} isNew={!room.surfaces.some((x) => x.id === editing.item.id)} />
             : <FloorForm value={editing.item} onSave={saveItem} onCancel={() => setEditing(null)} />}
         </div>
       ) : (
@@ -223,12 +244,27 @@ function FillGaps({ house, updateHouse, onClose }) {
         const item = r.id === task.room.id
           ? surf
           : { ...newSurface(surf.kind), label: surf.label, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, surf[f]])) };
-        // Une entrée vide du même type (sans couleur choisie) est remplacée plutôt que doublée.
-        const blank = r.surfaces.findIndex((x) => x.kind === item.kind && !isChosen(x));
-        return { ...r, surfaces: blank < 0 ? [...r.surfaces, item] : r.surfaces.map((x, i) => (i === blank ? { ...item, id: x.id } : x)) };
+        return withSurface(r, item);
       }),
     });
     setApplyAll(false);
+  };
+
+  // « Même couleur » automatique : seulement dans les pièces où une seule couleur est déjà choisie
+  // (sinon on ne sait pas laquelle reprendre : le choix se fait à l'étape de la pièce).
+  const auto = house.rooms.filter((r) => missingKinds(r).length && colorSources(r).length === 1);
+  const autoCount = auto.reduce((n, r) => n + missingKinds(r).length, 0);
+  const fillSameColor = () => {
+    updateHouse({
+      rooms: house.rooms.map((r) => {
+        if (!auto.includes(r)) return r;
+        const [src] = colorSources(r);
+        return missingKinds(r).reduce(
+          (room, kind) => withSurface(room, { ...newSurface(kind), ...src.fields, notes: sameColorNote(src) }),
+          r,
+        );
+      }),
+    });
   };
 
   return (
@@ -248,11 +284,20 @@ function FillGaps({ house, updateHouse, onClose }) {
             <p className="meta">
               Reste {pending.length} élément(s) dans {new Set(pending.map((t) => t.room.id)).size} pièce(s).
             </p>
+            {autoCount > 0 && (
+              <div className="card row" style={{ marginBottom: 10 }}>
+                <span className="grow meta">
+                  {auto.length} pièce(s) n’ont qu’une seule couleur : les {autoCount} vide(s) peuvent reprendre cette couleur (produit et fini à préciser ensuite).
+                </span>
+                <button className="primary" onClick={fillSameColor}>Même couleur partout ({autoCount})</button>
+              </div>
+            )}
             <h3>{task.room.name} — manque : {surfaceLabel(task.kind).toLowerCase()}</h3>
             <SurfaceForm
               key={task.key}
               value={newSurface(task.kind)}
               otherRooms={house.rooms.filter((r) => r.id !== task.room.id)}
+              sameColor={colorSources(task.room)}
               isNew
               onSave={save}
               onCancel={() => setSkipped([...skipped, task.key])}

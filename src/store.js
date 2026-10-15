@@ -29,6 +29,19 @@ export const isChosen = (s) => !!(s.colorCode?.trim() || s.colorName?.trim());
 export const missingKinds = (room) =>
   REQUIRED_KINDS.filter((k) => !room.surfaces.some((s) => s.kind === k && isChosen(s)));
 
+// Couleurs déjà choisies dans une pièce (murs, plafond, moulures), regroupées quand c'est la même couleur.
+export const COLOR_FIELDS = ['colorName', 'colorCode', 'hex'];
+export function colorSources(room) {
+  const map = new Map();
+  for (const s of room.surfaces) {
+    if (!REQUIRED_KINDS.includes(s.kind) || !isChosen(s)) continue;
+    const key = (s.colorCode || '').trim().toLowerCase() || (s.colorName || '').trim().toLowerCase();
+    if (!map.has(key)) map.set(key, { key, kinds: [], fields: Object.fromEntries(COLOR_FIELDS.map((f) => [f, s[f]])) });
+    if (!map.get(key).kinds.includes(s.kind)) map.get(key).kinds.push(s.kind);
+  }
+  return [...map.values()];
+}
+
 export const surfaceLabel = (v) => SURFACES.find((s) => s.value === v)?.label ?? v;
 
 export const newHouse = (name = 'Ma maison', address = '') => ({ id: uid(), name, address, rooms: [] });
