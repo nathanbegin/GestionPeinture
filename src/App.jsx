@@ -128,6 +128,41 @@ function FloorForm({ value, onSave, onCancel }) {
   );
 }
 
+/** Action sensible : exige le mot de passe de l'application (vérifié par le serveur) et une confirmation explicite. */
+function PasswordConfirm({ title, children, confirmLabel, onConfirm, onCancel }) {
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    const result = await onConfirm(pw);
+    if (result === 'ok') return; // le parent ferme la fenêtre
+    setBusy(false);
+    setErr({
+      password: 'Mot de passe incorrect.',
+      conflict: 'Les données ont été modifiées ailleurs : rechargez la page, puis réessayez.',
+      login: 'Session expirée : reconnectez-vous.',
+    }[result] ?? 'Échec de l’opération, réessayez.');
+  };
+  return (
+    <div className="overlay">
+      <form className="modal form" onSubmit={submit}>
+        <h2 className="full">{title}</h2>
+        <div className="full">{children}</div>
+        <Field label="Mot de passe de l’application" className="full">
+          <input type="password" autoFocus autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        </Field>
+        {err && <div className="full" style={{ color: 'var(--bad)' }}>{err}</div>}
+        <div className="row full">
+          <button type="submit" className="danger" disabled={busy || !pw}>{busy ? 'Vérification…' : confirmLabel}</button>
+          <button type="button" onClick={onCancel} disabled={busy}>Annuler</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function SaveStatus({ saveState, reload, retrySave }) {
   if (saveState === 'conflict') {
     return <span className="tag" style={{ color: 'var(--bad)' }}>Modifié ailleurs — <button className="link" onClick={reload}>recharger</button> (vos dernières modifications seront perdues)</span>;
@@ -336,7 +371,7 @@ function ReportModal({ house, onClose }) {
   );
 }
 
-function Main({ state, setState, saveState, logout, reload, retrySave }) {
+function Main({ state, setState, commit, saveState, logout, reload, retrySave }) {
   const [report, setReport] = useState(false);
   const house = state.houses.find((h) => h.id === state.currentId) ?? state.houses[0];
 
@@ -354,13 +389,22 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
     if (!name?.trim()) return;
     updateHouse({ name: name.trim(), address: prompt('Adresse', house.address) ?? house.address });
   };
+  const [deleting, setDeleting] = useState(false);
+  const [importing, setImporting] = useState(null); // données à importer, en attente du mot de passe
   const deleteHouse = () => {
     if (state.houses.length < 2) return alert('Il faut garder au moins une maison.');
-    if (!confirm(`Supprimer « ${house.name} » et toutes ses pièces ?`)) return;
-    setState((st) => {
-      const houses = st.houses.filter((h) => h.id !== house.id);
-      return { houses, currentId: houses[0].id };
-    });
+    setDeleting(true);
+  };
+  const confirmDelete = async (password) => {
+    const houses = state.houses.filter((h) => h.id !== house.id);
+    const result = await commit({ ...state, houses, currentId: houses[0].id }, password);
+    if (result === 'ok') setDeleting(false);
+    return result;
+  };
+  const confirmImport = async (password) => {
+    const result = await commit({ houses: importing.houses, currentId: importing.houses[0].id }, password);
+    if (result === 'ok') setImporting(null);
+    return result;
   };
   // Pièces de base pas encore présentes dans cette maison (comparaison par nom)
   const missingRooms = DEFAULT_ROOMS.filter(([name]) => !house.rooms.some((r) => r.name === name));
@@ -386,7 +430,7 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
       try {
         const data = JSON.parse(t);
         if (!Array.isArray(data.houses) || !data.houses.length) throw new Error();
-        if (confirm('Remplacer les données actuelles par ce fichier ?')) setState({ houses: data.houses, currentId: data.houses[0].id });
+        setImporting(data);
       } catch { alert('Fichier invalide.'); }
     });
     e.target.value = '';
@@ -450,6 +494,33 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
         </div>
       ))}
 
+      {deleting && (
+        <PasswordConfirm
+          title={`Supprimer « ${house.name} »`}
+          confirmLabel="Supprimer définitivement"
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleting(false)}
+        >
+          <p>
+            Cette action est <strong>irréversible</strong> : la maison, ses {house.rooms.length} pièce(s) et
+            {' '}{house.rooms.reduce((n, r) => n + r.surfaces.length, 0)} couleur(s) seront supprimées pour tous vos appareils.
+            Pensez à faire un export (JSON) avant.
+          </p>
+        </PasswordConfirm>
+      )}
+      {importing && (
+        <PasswordConfirm
+          title="Remplacer toutes les données"
+          confirmLabel="Remplacer définitivement"
+          onConfirm={confirmImport}
+          onCancel={() => setImporting(null)}
+        >
+          <p>
+            Les données actuelles ({state.houses.length} maison(s)) seront <strong>remplacées</strong> par le fichier
+            ({importing.houses.length} maison(s)). Cette action est irréversible.
+          </p>
+        </PasswordConfirm>
+      )}
       {filling && <FillGaps house={house} updateHouse={updateHouse} onClose={() => setFilling(false)} />}
       {report && <ReportModal house={house} onClose={() => setReport(false)} />}
     </div>

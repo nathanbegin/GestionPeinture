@@ -171,7 +171,7 @@ export function useStore() {
       version.current = v;
       let initial = data ?? legacyState() ?? defaultState();
       let seed = !!data && isPristine(data);
-      if (seed) initial = defaultState();
+      if (seed) initial = { ...data, houses: [{ ...data.houses[0], rooms: DEFAULT_ROOMS.map(([n, f]) => newRoom(n, f)) }] };
       const [withFloors, migrated] = addMissingFloors(initial);
       initial = withFloors;
       seed = seed || migrated;
@@ -202,6 +202,35 @@ export function useStore() {
     schedule();
   }, [schedule]);
 
+  /**
+   * Enregistre tout de suite `next` avec le mot de passe de l'application (requis pour supprimer une maison).
+   * Retourne 'ok' | 'password' | 'conflict' | 'login' | 'error'. L'état local ne change qu'en cas de succès.
+   */
+  const commit = useCallback(async (next, password) => {
+    clearTimeout(timer.current);
+    while (saving.current) await new Promise((r) => setTimeout(r, 50));
+    saving.current = true;
+    setSaveState('saving');
+    let result = 'error';
+    try {
+      const r = await api('PUT', { data: next, version: version.current, confirmPassword: password });
+      if (r.status === 403) result = 'password';
+      else if (r.status === 409) { result = 'conflict'; setSaveState('conflict'); }
+      else if (r.status === 401) { result = 'login'; setStatus('login'); }
+      else if (r.ok) {
+        version.current = (await r.json()).version;
+        latest.current = next;
+        dirty.current = false;
+        setStateRaw(next);
+        result = 'ok';
+      }
+    } catch { /* result reste 'error' */ }
+    saving.current = false;
+    if (result === 'ok') setSaveState('saved');
+    else if (result === 'password' || result === 'error') { setSaveState(result === 'error' ? 'error' : 'saved'); if (dirty.current) schedule(0); }
+    return result;
+  }, [schedule]);
+
   const login = async (password) => {
     const r = await fetch('/api/session', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }),
@@ -216,5 +245,5 @@ export function useStore() {
     setStatus('login');
   };
 
-  return { state, setState, status, saveState, login, logout, reload: load, retrySave: () => schedule(0) };
+  return { state, setState, commit, status, saveState, login, logout, reload: load, retrySave: () => schedule(0) };
 }
