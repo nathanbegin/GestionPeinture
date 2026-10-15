@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   useStore, newHouse, newRoom, newSurface, newFloor, uid,
-  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel, fmtMonth, toMonthValue,
+  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel, fmtMonth, toMonthValue, missingKinds, isChosen,
 } from './store.js';
 import { downloadReport } from './pdf.js';
 
@@ -48,7 +48,7 @@ function CopyPicker({ kind, otherRooms, onPick }) {
   );
 }
 
-function SurfaceForm({ value, onSave, onCancel, otherRooms = [], isNew = false }) {
+function SurfaceForm({ value, onSave, onCancel, otherRooms = [], isNew = false, saveLabel = 'Enregistrer', cancelLabel = 'Annuler' }) {
   const [s, setS] = useState(value);
   const set = (k) => (e) => setS({ ...s, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value });
   const copyFrom = (src) => setS({ ...s, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, src[f]])) });
@@ -79,8 +79,8 @@ function SurfaceForm({ value, onSave, onCancel, otherRooms = [], isNew = false }
       {s.inStock && <Field label="Quantité / contenant restant"><input value={s.stockNote} onChange={set('stockNote')} placeholder="ex. ½ gallon" /></Field>}
       <Field label="Notes" className="full"><textarea rows={2} value={s.notes} onChange={set('notes')} /></Field>
       <div className="row full">
-        <button className="primary" onClick={() => onSave(s)}>Enregistrer</button>
-        <button onClick={onCancel}>Annuler</button>
+        <button className="primary" onClick={() => onSave(s)}>{saveLabel}</button>
+        <button onClick={onCancel}>{cancelLabel}</button>
       </div>
     </div>
   );
@@ -140,6 +140,11 @@ function Room({ room, otherRooms, update, remove }) {
     <section className="card">
       <div className="row">
         <h2 className="grow">{room.name}</h2>
+        {missingKinds(room).length > 0 && (
+          <span className="tag warn" title="Prérequis : au moins un mur, le plafond et les moulures">
+            ⚠ Manque : {missingKinds(room).map((k) => surfaceLabel(k).toLowerCase()).join(', ')}
+          </span>
+        )}
         <select value={room.floor || ''} onChange={(e) => update({ ...room, floor: e.target.value })} aria-label="Étage">
           <option value="">Sans étage</option>
           {FLOORS.map((f) => <option key={f}>{f}</option>)}
@@ -200,6 +205,74 @@ function Room({ room, otherRooms, update, remove }) {
   );
 }
 
+/** Parcourt les pièces incomplètes et propose de combler chaque vide (nouvelle couleur ou copie d'une autre pièce). */
+function FillGaps({ house, updateHouse, onClose }) {
+  const [skipped, setSkipped] = useState([]);
+  const [applyAll, setApplyAll] = useState(false);
+  const tasks = house.rooms.flatMap((room) => missingKinds(room).map((kind) => ({ room, kind, key: `${room.id}:${kind}` })));
+  const pending = tasks.filter((t) => !skipped.includes(t.key));
+  const task = pending[0];
+  const sameKind = task ? pending.filter((t) => t.kind === task.kind) : [];
+
+  const save = (surf) => {
+    // « Même couleur partout » : copie couleur et produit dans les autres pièces où ce type manque aussi.
+    const targets = applyAll && surf.kind === task.kind ? sameKind : [task];
+    updateHouse({
+      rooms: house.rooms.map((r) => {
+        if (!targets.some((t) => t.room.id === r.id)) return r;
+        const item = r.id === task.room.id
+          ? surf
+          : { ...newSurface(surf.kind), label: surf.label, ...Object.fromEntries(COPY_FIELDS.map((f) => [f, surf[f]])) };
+        // Une entrée vide du même type (sans couleur choisie) est remplacée plutôt que doublée.
+        const blank = r.surfaces.findIndex((x) => x.kind === item.kind && !isChosen(x));
+        return { ...r, surfaces: blank < 0 ? [...r.surfaces, item] : r.surfaces.map((x, i) => (i === blank ? { ...item, id: x.id } : x)) };
+      }),
+    });
+    setApplyAll(false);
+  };
+
+  return (
+    <div className="overlay">
+      <div className="modal">
+        <h2>Compléter les pièces</h2>
+        {!task ? (
+          <>
+            <p>{skipped.length ? `${skipped.length} élément(s) passé(s).` : '✓ Toutes les pièces sont complètes.'}</p>
+            <div className="row">
+              {skipped.length > 0 && <button onClick={() => setSkipped([])}>Revoir les éléments passés</button>}
+              <button className="primary" onClick={onClose}>Fermer</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="meta">
+              Reste {pending.length} élément(s) dans {new Set(pending.map((t) => t.room.id)).size} pièce(s).
+            </p>
+            <h3>{task.room.name} — manque : {surfaceLabel(task.kind).toLowerCase()}</h3>
+            <SurfaceForm
+              key={task.key}
+              value={newSurface(task.kind)}
+              otherRooms={house.rooms.filter((r) => r.id !== task.room.id)}
+              isNew
+              onSave={save}
+              onCancel={() => setSkipped([...skipped, task.key])}
+              saveLabel="Enregistrer et suivant"
+              cancelLabel="Passer"
+            />
+            {sameKind.length > 1 && (
+              <label className="row" style={{ marginTop: 10 }}>
+                <input type="checkbox" checked={applyAll} onChange={(e) => setApplyAll(e.target.checked)} />
+                Appliquer la même couleur aux {sameKind.length - 1} autre(s) pièce(s) où manque : {surfaceLabel(task.kind).toLowerCase()}
+              </label>
+            )}
+            <div className="row" style={{ marginTop: 14 }}><button onClick={onClose}>Fermer</button></div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ReportModal({ house, onClose }) {
   const [ids, setIds] = useState(house.rooms.map((r) => r.id));
   const [includeFloors, setFloors] = useState(true);
@@ -254,6 +327,8 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
   // Pièces de base pas encore présentes dans cette maison (comparaison par nom)
   const missingRooms = DEFAULT_ROOMS.filter(([name]) => !house.rooms.some((r) => r.name === name));
   const addDefaultRooms = () => updateHouse({ rooms: [...house.rooms, ...missingRooms.map(([n, f]) => newRoom(n, f))] });
+  const [filling, setFilling] = useState(false);
+  const incompleteRooms = house.rooms.filter((r) => missingKinds(r).length);
   const [adding, setAdding] = useState(null); // { name, floor } ou null
   const addRoom = () => {
     if (!adding.name.trim()) return;
@@ -299,8 +374,12 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
         <div className="grow">
           <h2>{house.name}</h2>
           <div className="meta">{house.address || 'Aucune adresse'} · {house.rooms.length} pièce(s)</div>
+          {house.rooms.length > 0 && (incompleteRooms.length
+            ? <div className="warn-text">⚠ {incompleteRooms.length} pièce(s) incomplète(s) : il faut au moins un mur, le plafond et les moulures.</div>
+            : <div className="meta">✓ Toutes les pièces sont complètes.</div>)}
         </div>
-        <button className="primary" onClick={() => setAdding({ name: '', floor: FLOORS[0] })}>+ Pièce</button>
+        {incompleteRooms.length > 0 && <button className="primary" onClick={() => setFilling(true)}>Compléter ({incompleteRooms.length})</button>}
+        <button className={incompleteRooms.length ? '' : 'primary'} onClick={() => setAdding({ name: '', floor: FLOORS[0] })}>+ Pièce</button>
         {missingRooms.length > 0 && (
           <button onClick={addDefaultRooms} title="Ajoute les pièces de base absentes de cette maison">+ Pièces de base ({missingRooms.length})</button>
         )}
@@ -333,6 +412,7 @@ function Main({ state, setState, saveState, logout, reload, retrySave }) {
         </div>
       ))}
 
+      {filling && <FillGaps house={house} updateHouse={updateHouse} onClose={() => setFilling(false)} />}
       {report && <ReportModal house={house} onClose={() => setReport(false)} />}
     </div>
   );

@@ -22,6 +22,13 @@ export const fmtMonth = (v) => {
   return m ? new Date(+m[1], +m[2] - 1, 1).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' }) : '—';
 };
 
+// Une pièce est complète si elle a une peinture choisie pour au moins un mur, le plafond et les moulures
+// (les portes ne sont pas obligatoires). « Choisie » = un code ou un nom de couleur est renseigné.
+export const REQUIRED_KINDS = ['murs', 'plafond', 'moulures'];
+export const isChosen = (s) => !!(s.colorCode?.trim() || s.colorName?.trim());
+export const missingKinds = (room) =>
+  REQUIRED_KINDS.filter((k) => !room.surfaces.some((s) => s.kind === k && isChosen(s)));
+
 export const surfaceLabel = (v) => SURFACES.find((s) => s.value === v)?.label ?? v;
 
 export const newHouse = (name = 'Ma maison', address = '') => ({ id: uid(), name, address, rooms: [] });
