@@ -13,12 +13,27 @@ Registre de couleurs et de peinture pour la maison, pièce par pièce.
 - Rapport PDF par maison (pièces au choix, avec pastilles de couleur, option « en stock seulement »)
 - Sauvegarde automatique dans le navigateur, export/import JSON
 
+## Architecture
+
+- Interface : React + Vite (statique)
+- API : fonctions serverless Vercel dans `api/` (`/api/session` connexion, `/api/data` lecture/écriture)
+- Base de données : Postgres (Neon via le Marketplace Vercel), une table `registre` créée automatiquement
+- Accès protégé par un mot de passe unique (variable `APP_PASSWORD`), cookie HttpOnly de 30 jours
+- Verrou optimiste : si les données sont modifiées sur un autre appareil, l'application le signale au lieu d'écraser
+
+## Variables d'environnement
+
+| Variable | Rôle |
+| --- | --- |
+| `DATABASE_URL` | Ajoutée automatiquement par l'intégration Neon |
+| `APP_PASSWORD` | Mot de passe de l'application (changer sa valeur déconnecte tous les appareils) |
+
 ## Démarrage
 
 ```bash
 npm install
-npm run dev     # développement
-npm run build   # production (dossier dist/)
+npx vercel dev   # interface + API en local (nécessite `vercel link` et `vercel env pull`)
+npm run build    # production
 ```
 
-Les données sont stockées localement (localStorage) : pensez à utiliser « Exporter (JSON) » pour faire des copies de sauvegarde.
+Au premier chargement, les données de l'ancienne version (navigateur) sont migrées automatiquement vers la base.

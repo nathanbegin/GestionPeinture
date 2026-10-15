@@ -68,6 +68,16 @@ function FloorForm({ value, onSave, onCancel }) {
   );
 }
 
+function SaveStatus({ saveState, reload, retrySave }) {
+  if (saveState === 'conflict') {
+    return <span className="tag" style={{ color: 'var(--bad)' }}>Modifié ailleurs — <button className="link" onClick={reload}>recharger</button> (vos dernières modifications seront perdues)</span>;
+  }
+  if (saveState === 'error') {
+    return <span className="tag" style={{ color: 'var(--bad)' }}>Échec de l’enregistrement — <button className="link" onClick={retrySave}>réessayer</button></span>;
+  }
+  return <span className="tag meta">{saveState === 'saving' ? 'Enregistrement…' : 'Enregistré'}</span>;
+}
+
 function Room({ room, update, remove }) {
   // editing: { type: 'surface' | 'floor', item } ou null
   const [editing, setEditing] = useState(null);
@@ -172,8 +182,7 @@ function ReportModal({ house, onClose }) {
   );
 }
 
-export default function App() {
-  const [state, setState] = useStore();
+function Main({ state, setState, saveState, logout, reload, retrySave }) {
   const [report, setReport] = useState(false);
   const house = state.houses.find((h) => h.id === state.currentId) ?? state.houses[0];
 
@@ -227,6 +236,8 @@ export default function App() {
       <header className="top">
         <h1>🎨 Registre de peinture</h1>
         <div className="row">
+          <SaveStatus saveState={saveState} reload={reload} retrySave={retrySave} />
+          <button className="link" onClick={logout}>Déconnexion</button>
           <select value={house.id} onChange={(e) => setState({ ...state, currentId: e.target.value })}>
             {state.houses.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
           </select>
@@ -258,4 +269,44 @@ export default function App() {
       {report && <ReportModal house={house} onClose={() => setReport(false)} />}
     </div>
   );
+}
+
+function Login({ onLogin }) {
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr((await onLogin(pw)) ? '' : 'Mot de passe incorrect');
+    setBusy(false);
+  };
+  return (
+    <div className="wrap">
+      <form className="card form" onSubmit={submit} style={{ maxWidth: 360, margin: '80px auto' }}>
+        <h1 className="full">🎨 Registre de peinture</h1>
+        <Field label="Mot de passe" className="full">
+          <input type="password" autoFocus autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        </Field>
+        {err && <div className="full" style={{ color: 'var(--bad)' }}>{err}</div>}
+        <button className="primary full" disabled={busy || !pw}>Se connecter</button>
+      </form>
+    </div>
+  );
+}
+
+export default function App() {
+  const store = useStore();
+  const { status, state } = store;
+  if (status === 'login') return <Login onLogin={store.login} />;
+  if (status === 'error') {
+    return (
+      <div className="wrap">
+        <p>Impossible de joindre le serveur.</p>
+        <button onClick={store.reload}>Réessayer</button>
+      </div>
+    );
+  }
+  if (status === 'loading' || !state) return <div className="wrap meta">Chargement…</div>;
+  return <Main {...store} />;
 }
