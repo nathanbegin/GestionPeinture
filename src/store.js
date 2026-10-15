@@ -27,10 +27,23 @@ export const newFloor = () => ({
   id: uid(), type: 'Plancher', brand: '', model: '', color: '', installedOn: '', notes: '',
 });
 
+export const DEFAULT_ROOMS = [
+  'Entrée avant', 'Salle à manger', 'Cuisine', 'Boudoir', 'Salon',
+  'Cage d’escalier (rez-de-chaussée)', 'Cage d’escalier (étage)', 'Cage d’escalier (sous-sol)',
+  'Salle d’eau', 'Salle de lavage', 'Salle de bain (sous-sol)', 'Salle de bain (étage)',
+  'Chambre des maîtres', 'Chambre Nathan', 'Chambre Léa', 'Chambre invitée',
+  'Chambre de musique', 'Cinéma maison', 'Garage',
+];
+
 const defaultState = () => {
   const house = newHouse();
+  house.rooms = DEFAULT_ROOMS.map(newRoom);
   return { houses: [house], currentId: house.id };
 };
+
+// Maison par défaut encore vierge (jamais modifiée) : on y ajoute les pièces de base.
+const isPristine = (d) =>
+  d.houses.length === 1 && d.houses[0].name === 'Ma maison' && !d.houses[0].address && !d.houses[0].rooms.length;
 
 // Anciennes données (version 100 % navigateur) : migrées vers la base au premier chargement.
 function legacyState() {
@@ -100,12 +113,14 @@ export function useStore() {
       if (!r.ok) throw new Error();
       const { data, version: v } = await r.json();
       version.current = v;
-      const initial = data ?? legacyState() ?? defaultState();
+      let initial = data ?? legacyState() ?? defaultState();
+      const seed = !!data && isPristine(data);
+      if (seed) initial = defaultState();
       latest.current = initial;
       setStateRaw(initial);
       setSaveState('saved');
       setStatus('ready');
-      if (!data) schedule(0); // premier enregistrement (migration éventuelle)
+      if (!data || seed) schedule(0); // premier enregistrement (migration ou pièces par défaut)
     } catch {
       setStatus('error');
     }
