@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { surfaceLabel, groupByFloor } from './store.js';
+import { surfaceLabel, groupByFloor, fmtMonth } from './store.js';
 
 const hexToRgb = (hex) => {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
@@ -8,8 +8,6 @@ const hexToRgb = (hex) => {
   const n = parseInt(m[1], 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 };
-
-const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-CA') : '—');
 
 /** Génère le PDF d'une maison. roomIds: pièces à inclure (null = toutes). */
 export function buildReport(house, { roomIds = null, includeFloors = true, onlyInStock = false } = {}) {
@@ -57,7 +55,7 @@ export function buildReport(house, { roomIds = null, includeFloors = true, onlyI
         [s.colorName, s.colorCode].filter(Boolean).join(' — ') || '—',
         [s.brand, s.model].filter(Boolean).join(' ') || '—',
         s.finish || '—',
-        fmtDate(s.lastApplied),
+        fmtMonth(s.lastApplied),
         s.inStock ? `Oui${s.stockNote ? ` (${s.stockNote})` : ''}` : 'Non',
       ]),
       styles: { fontSize: 9, cellPadding: 4, minCellHeight: 18 },
@@ -79,7 +77,7 @@ export function buildReport(house, { roomIds = null, includeFloors = true, onlyI
         startY: y,
         margin: { left: margin, right: margin },
         head: [['Revêtement de sol', 'Marque', 'Modèle', 'Couleur', 'Installé le']],
-        body: room.floors.map((f) => [f.type, f.brand || '—', f.model || '—', f.color || '—', fmtDate(f.installedOn)]),
+        body: room.floors.map((f) => [f.type, f.brand || '—', f.model || '—', f.color || '—', fmtMonth(f.installedOn)]),
         styles: { fontSize: 9, cellPadding: 4 },
         headStyles: { fillColor: [120, 113, 108] },
       });

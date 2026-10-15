@@ -15,6 +15,13 @@ export const SURFACES = [
 export const FINISHES = ['Mat', 'Coquille d’œuf', 'Satiné', 'Semi-lustré', 'Lustré', 'Autre'];
 export const FLOOR_TYPES = ['Plancher', 'Céramique', 'Vinyle', 'Tapis', 'Autre'];
 
+// Dates au mois près : stockées « AAAA-MM » (les anciennes « AAAA-MM-JJ » restent lisibles).
+export const toMonthValue = (v) => (v || '').slice(0, 7);
+export const fmtMonth = (v) => {
+  const m = /^(\d{4})-(\d{2})/.exec(v || '');
+  return m ? new Date(+m[1], +m[2] - 1, 1).toLocaleDateString('fr-CA', { month: 'long', year: 'numeric' }) : '—';
+};
+
 export const surfaceLabel = (v) => SURFACES.find((s) => s.value === v)?.label ?? v;
 
 export const newHouse = (name = 'Ma maison', address = '') => ({ id: uid(), name, address, rooms: [] });

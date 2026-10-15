@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import {
   useStore, newHouse, newRoom, newSurface, newFloor, uid,
-  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel,
+  SURFACES, FINISHES, FLOOR_TYPES, FLOORS, DEFAULT_ROOMS, groupByFloor, surfaceLabel, fmtMonth, toMonthValue,
 } from './store.js';
 import { downloadReport } from './pdf.js';
 
-const fmtDate = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('fr-CA') : '—');
 
 function Field({ label, children, className }) {
   return <label className={className}>{label}{children}</label>;
@@ -33,7 +32,7 @@ function SurfaceForm({ value, onSave, onCancel }) {
           {FINISHES.map((f) => <option key={f}>{f}</option>)}
         </select>
       </Field>
-      <Field label="Dernière application"><input type="date" value={s.lastApplied} onChange={set('lastApplied')} /></Field>
+      <Field label="Dernière application (mois)"><input type="month" value={toMonthValue(s.lastApplied)} onChange={set('lastApplied')} /></Field>
       <Field label="" className="chk">
         <input type="checkbox" checked={s.inStock} onChange={set('inStock')} /> Il m’en reste en stock
       </Field>
@@ -58,7 +57,7 @@ function FloorForm({ value, onSave, onCancel }) {
       <Field label="Marque"><input value={f.brand} onChange={set('brand')} /></Field>
       <Field label="Modèle"><input value={f.model} onChange={set('model')} /></Field>
       <Field label="Couleur"><input value={f.color} onChange={set('color')} /></Field>
-      <Field label="Date d’installation"><input type="date" value={f.installedOn} onChange={set('installedOn')} /></Field>
+      <Field label="Installation (mois)"><input type="month" value={toMonthValue(f.installedOn)} onChange={set('installedOn')} /></Field>
       <Field label="Notes" className="full"><textarea rows={2} value={f.notes} onChange={set('notes')} /></Field>
       <div className="row full">
         <button className="primary" onClick={() => onSave(f)}>Enregistrer</button>
@@ -121,7 +120,7 @@ function Room({ room, update, remove }) {
             — {[s.colorName, s.colorCode].filter(Boolean).join(' · ') || 'couleur non précisée'}
             <div className="meta">
               {[s.brand, s.model, s.finish].filter(Boolean).join(' · ') || 'Marque non précisée'}
-              {' · '}Appliquée : {fmtDate(s.lastApplied)}
+              {' · '}Appliquée : {fmtMonth(s.lastApplied)}
             </div>
             <span className={`tag ${s.inStock ? 'ok' : 'no'}`}>
               {s.inStock ? `En stock${s.stockNote ? ` : ${s.stockNote}` : ''}` : 'Plus de stock'}
@@ -138,7 +137,7 @@ function Room({ room, update, remove }) {
         <div className="surface" key={f.id}>
           <div className="grow">
             <strong>{f.type}</strong> — {[f.brand, f.model, f.color].filter(Boolean).join(' · ') || 'non précisé'}
-            <div className="meta">Installé : {fmtDate(f.installedOn)}{f.notes && ` · ${f.notes}`}</div>
+            <div className="meta">Installé : {fmtMonth(f.installedOn)}{f.notes && ` · ${f.notes}`}</div>
           </div>
           <button className="link" onClick={() => setEditing({ type: 'floor', item: f })}>Modifier</button>
           <button className="link danger" onClick={() => update({ ...room, floors: room.floors.filter((x) => x.id !== f.id) })}>✕</button>
